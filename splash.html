@@ -1,0 +1,891 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>小克开机动画</title>
+<!--
+  小克 / Claude Desktop 开机动画 · 第六版「像素小克变身拟人小克」（约 21 秒）
+  五幕：冷启动终端 → 星芒描线炸开 → Clawd 掏书、书页透光、化成像素飞走 → 拟人立绘显影 → 虚化交接
+  参考：dsh-cold-boot（真实读数、场景先出后进）、NativeDog1/dsh-boot-animation（显影进场、虚化退场、Esc 与防误触）
+  第五版留在 splash_v5.html。无音效。Esc / 空格 / 回车 / 点击画面 都能跳过（开场 0.4 秒内的点击不算）。
+
+  URL 参数：
+    ?speed=1.5    整体加速（0.35 – 3）
+    ?mcp=N        启动器读本机 Claude 配置后传进来的 MCP 服务器数
+    ?embed        嵌入启动器时用：不显示重播按钮
+    ?pose=a|b|c|d 指定立绘姿势（默认每次随机，且不和上一次重复）
+-->
+<style>
+  :root {
+    --accent: #d97757;
+    --fur: #d87656;
+    --gold: #f2c27a;
+    --cream: #fbf1e2;
+    --ink: #1a120d;
+    --mono: "Cascadia Mono", "SFMono-Regular", "Consolas", "Menlo", monospace;
+    --serif: "Cambria", "Georgia", "Times New Roman", serif;
+    --zh: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+    --zh-serif: "Noto Serif SC", "Source Han Serif SC", "SimSun", serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body { background: #000; overflow: hidden; }
+  @property --rev { syntax: "<percentage>"; inherits: false; initial-value: -15%; }
+
+  #root {
+    position: fixed; inset: 0; overflow: hidden; background: #000;
+    color: var(--cream); -webkit-font-smoothing: antialiased; user-select: none; cursor: default;
+  }
+  #root > * { position: absolute; }
+  .ch { display: inline-block; opacity: 0; transform: translateY(.16em); transition: opacity 260ms ease, transform 260ms ease; white-space: pre; }
+  .in > .ch { opacity: 1; transform: none; }
+
+  /* ── 舞台底色：第三幕暗暖色，第四幕被书照亮 ───────── */
+  .bg, .bg4, .rays { inset: 0; opacity: 0; pointer-events: none; }
+  .bg {
+    background:
+      radial-gradient(60% 50% at 50% 62%, rgba(216,118,86,.22) 0%, rgba(216,118,86,0) 70%),
+      radial-gradient(140% 100% at 50% 100%, #2a1810 0%, #120b07 55%, #070403 100%);
+    transition: opacity 900ms ease;
+  }
+  .bg4 {
+    background:
+      radial-gradient(38% 52% at 64% 40%, rgba(255,214,160,.62) 0%, rgba(240,160,100,.26) 45%, rgba(240,160,100,0) 75%),
+      radial-gradient(70% 60% at 18% 30%, rgba(255,190,130,.16) 0%, rgba(255,190,130,0) 70%),
+      radial-gradient(150% 110% at 60% 100%, #4a2716 0%, #24140c 48%, #0d0705 100%);
+    transition: opacity 1400ms ease;
+  }
+  .bg.in, .bg4.in { opacity: 1; }
+  /* 斜着打下来的几道光，像图书馆高窗 */
+  .rays {
+    inset: -20%;
+    background: repeating-conic-gradient(from 196deg at 82% 0%, rgba(255,226,176,0) 0deg, rgba(255,226,176,.11) 2.2deg, rgba(255,226,176,0) 5deg, rgba(255,226,176,0) 9deg);
+    -webkit-mask-image: radial-gradient(70% 80% at 70% 20%, #000 0%, transparent 80%);
+            mask-image: radial-gradient(70% 80% at 70% 20%, #000 0%, transparent 80%);
+    transition: opacity 2200ms ease; mix-blend-mode: screen; will-change: transform;
+  }
+  .rays.in { opacity: 1; }
+  canvas { inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .floor {
+    left: 50%; bottom: 3.6vh; width: 46vw; height: 6vh; transform: translateX(-50%);
+    background: radial-gradient(50% 50% at 50% 50%, rgba(0,0,0,.55) 0%, rgba(0,0,0,0) 70%);
+    opacity: 0; transition: opacity 900ms ease;
+  }
+
+  /* ── 第一幕：冷启动终端 ─────────────────────────── */
+  .term {
+    left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 40;
+    width: min(620px, 86vw); font-family: var(--mono); font-size: 15px; line-height: 2;
+    color: #e8dfd2; letter-spacing: .06em;
+    text-shadow: 0 0 6px rgba(255,190,140,.35);
+  }
+  .term .ln { white-space: pre; min-height: 2em; }
+  .term .ln b { color: var(--accent); font-weight: 400; }
+  .term .ln i { font-style: normal; color: #8f867a; }
+  .term .ok { color: #9fd38a; }
+  .caret { display: inline-block; width: .6em; height: 1em; background: var(--accent); vertical-align: -.15em; animation: blink 900ms steps(1, end) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .term.jit { animation: jit 360ms steps(4, end) 1; }
+  @keyframes jit {
+    0% { transform: translate(-50%, -50%); }
+    25% { transform: translate(calc(-50% - 4px), -50%) skewX(-4deg); filter: hue-rotate(40deg); }
+    50% { transform: translate(calc(-50% + 3px), calc(-50% + 1px)); clip-path: inset(10% 0 40% 0); }
+    75% { transform: translate(calc(-50% - 1px), -50%); clip-path: inset(55% 0 5% 0); }
+    100% { transform: translate(-50%, -50%); clip-path: none; }
+  }
+  /* 关显像管一样压成一条线、再缩成一个点 */
+  .term.crt { animation: crt 420ms cubic-bezier(.6,0,.4,1) forwards; }
+  @keyframes crt {
+    0% { transform: translate(-50%, -50%); filter: brightness(1); opacity: 1; }
+    55% { transform: translate(-50%, -50%) scale(1, .01); filter: brightness(4); opacity: 1; }
+    100% { transform: translate(-50%, -50%) scale(0, .01); filter: brightness(6); opacity: 0; }
+  }
+  .dot {
+    left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; z-index: 41;
+    background: #fff; box-shadow: 0 0 18px 6px rgba(255,200,150,.9); opacity: 0;
+  }
+  .dot.go { animation: dot 520ms ease-out forwards; }
+  @keyframes dot { 0% { opacity: 0; transform: scale(.4); } 30% { opacity: 1; transform: scale(1.4); } 100% { opacity: 0; transform: scale(.2); } }
+
+  .scan {
+    inset: 0; z-index: 70; pointer-events: none; opacity: .55; transition: opacity 900ms ease;
+    background: repeating-linear-gradient(0deg, rgba(255,255,255,.035) 0 1px, rgba(0,0,0,0) 1px 3px);
+  }
+  .scan::after {
+    content: ""; position: absolute; left: 0; right: 0; height: 22vh; top: -22vh;
+    background: linear-gradient(180deg, rgba(255,255,255,0), rgba(255,235,210,.05) 80%, rgba(255,235,210,0));
+    animation: roll 2600ms linear infinite;
+  }
+  @keyframes roll { to { top: 100vh; } }
+  .scan.soft { opacity: .14; }
+
+  /* ── 第二幕：星芒一笔描出 → 墨水填满 → 炸开 ─────── */
+  .sparkstage {
+    left: 50%; top: 50%; transform: translate(-50%, -75px); z-index: 42;
+    display: flex; flex-direction: column; align-items: center; pointer-events: none;
+  }
+  .spark { display: block; overflow: visible; width: 150px; height: 150px; }
+  .spark path {
+    fill: var(--accent); fill-opacity: 0; stroke: var(--accent); stroke-width: 1.6; stroke-linejoin: round;
+    stroke-dasharray: 1; stroke-dashoffset: 1;
+    filter: drop-shadow(0 0 6px rgba(217,119,87,.7));
+  }
+  .spark.draw path { stroke-dashoffset: 0; transition: stroke-dashoffset 1300ms cubic-bezier(.6,.05,.3,1); }
+  .spark.ink path { fill-opacity: 1; transition: fill-opacity 420ms ease, stroke-dashoffset 1300ms; }
+  .spark.ink { animation: inkdrop 480ms cubic-bezier(.3,1.6,.5,1); }
+  @keyframes inkdrop { from { transform: scale(.88); } to { transform: none; } }
+  .spark.burst { animation: burst 380ms cubic-bezier(.5,0,.8,.4) forwards; }
+  @keyframes burst { to { transform: scale(1.7) rotate(50deg); opacity: 0; filter: brightness(3); } }
+  .sname {
+    margin-top: 26px; font-family: var(--serif); font-size: 30px; letter-spacing: .9em; text-indent: .9em;
+    opacity: 0; transition: opacity 500ms ease, letter-spacing 1300ms cubic-bezier(.16,.84,.24,1), text-indent 1300ms cubic-bezier(.16,.84,.24,1);
+  }
+  .sname.in { opacity: 1; letter-spacing: .34em; text-indent: .34em; }
+  .sname.out { opacity: 0; transition: opacity 260ms ease; }
+  .ssub { margin-top: 10px; font-family: var(--mono); font-size: 10px; letter-spacing: .5em; text-indent: .5em; color: rgba(251,241,226,.5); opacity: 0; transition: opacity 500ms ease; }
+  .ssub.in { opacity: 1; }
+  .ssub.out { opacity: 0; transition: opacity 260ms ease; }
+
+  /* ── 第三幕：Clawd 掏书 ─────────────────────────── */
+  .clawd-stage { left: 50%; top: 60%; transform: translate(-50%, -62%); z-index: 30; pointer-events: none; }
+  .clawd { display: block; width: min(330px, 40vw); overflow: visible; shape-rendering: crispEdges; opacity: 0; }
+  .clawd .fur { fill: var(--fur); }
+  .clawd .eye { fill: #000; transform-box: fill-box; transform-origin: center; transition: transform 90ms ease; }
+  .clawd.blink .eye { transform: scaleY(.15); }
+  .clawd.happy .eye { transform: scale(1.25, .28); transition-duration: 200ms; }
+  .clawd .arm { transition: transform 260ms cubic-bezier(.3,1.4,.5,1); }
+  .clawd.land { opacity: 1; }
+  .clawd.land .c-all { animation: land 620ms cubic-bezier(.3,.9,.4,1) both; transform-box: fill-box; transform-origin: 50% 100%; }
+  @keyframes land {
+    0% { transform: translateY(-9px) scale(.94, 1.08); opacity: 0; }
+    55% { transform: translateY(0) scale(1.12, .86); opacity: 1; }
+    78% { transform: translateY(-.6px) scale(.97, 1.04); }
+    100% { transform: none; }
+  }
+  .clawd.pocket .arm-l { transform: translate(.4px, 1.5px); }
+  .clawd.pocket .arm-r { transform: translateY(-1.1px); }
+  .clawd.pocket .eye-r { transform: scale(1.35, .3); }
+  .clawd.rummage .arm-l { animation: rummage 130ms ease-in-out 4 alternate; }
+  @keyframes rummage { from { transform: translate(.4px, 1.5px); } to { transform: translate(.4px, 1.95px); } }
+  .tome-held { opacity: 0; transform: scale(.25); transform-box: fill-box; transform-origin: 80% 100%; transition: opacity 120ms ease, transform 320ms cubic-bezier(.3,1.5,.5,1); }
+  .clawd.lift .arm-l { transform: translateY(-2.55px); transition-duration: 380ms; }
+  .clawd.lift .arm-r { transform: translateY(.6px); }
+  .clawd.lift .tome-held { opacity: 1; transform: none; }
+  /* 书从手里飘到头顶、摊开 */
+  .tome-open { opacity: 0; transform-box: fill-box; transform-origin: 50% 100%; }
+  .clawd.open .tome-held { opacity: 0; transition-duration: 80ms; }
+  .clawd.open .tome-open { animation: topen 520ms cubic-bezier(.3,1.5,.5,1) forwards, bob 1400ms ease-in-out 520ms infinite; }
+  @keyframes topen { 0% { opacity: 0; transform: translate(-4px, 2px) scale(.3, .6); } 100% { opacity: 1; transform: none; } }
+  @keyframes bob { 50% { transform: translateY(-.35px); } }
+  .clawd.open .arm-l, .clawd.open .arm-r { transform: translateY(-1.7px); }
+  .tome-glow { opacity: 0; transition: opacity 500ms ease; }
+  .clawd.open .tome-glow { opacity: 1; }
+  .beam { opacity: 0; transition: opacity 600ms ease; mix-blend-mode: screen; }
+  .clawd.beaming .beam { opacity: 1; animation: flicker 180ms steps(2, end) 3; }
+  @keyframes flicker { 50% { opacity: .55; } }
+  .clawd .body-g { transition: filter 600ms ease; }
+  .clawd.glow .body-g { filter: brightness(1.35) drop-shadow(0 0 .8px #ffc070); }
+  .clawd.hop .c-all { animation: hop 420ms cubic-bezier(.3,.7,.4,1) 2; transform-box: fill-box; transform-origin: 50% 100%; }
+  @keyframes hop { 0%, 100% { transform: none; } 40% { transform: translateY(-1.2px); } }
+  .clawd.gone { opacity: 0; transition: opacity 160ms ease; }
+
+  /* ── 第四幕：拟人立绘 ───────────────────────────── */
+  .girl-wrap {
+    left: 64%; bottom: 3vh; z-index: 20; pointer-events: none;
+    height: min(90vh, 1521px); aspect-ratio: var(--girl-ar, 917 / 1517);
+    transform: translateX(-50%); will-change: transform;
+  }
+  .dev, .breath { position: absolute; inset: 0; }
+  .dev {
+    opacity: 0;
+    -webkit-mask-image: linear-gradient(180deg, #000 0, #000 calc(var(--rev) - 10%), transparent calc(var(--rev) + 6%));
+            mask-image: linear-gradient(180deg, #000 0, #000 calc(var(--rev) - 10%), transparent calc(var(--rev) + 6%));
+    filter: blur(14px) brightness(1.9) saturate(.5); transform: scale(1.04);
+  }
+  .dev.in {
+    opacity: 1; --rev: 118%; filter: blur(0) brightness(1) saturate(1); transform: none;
+    transition: --rev 1500ms cubic-bezier(.5,0,.25,1), filter 1800ms ease, transform 2200ms cubic-bezier(.16,.84,.24,1), opacity 240ms ease;
+  }
+  /* 显影完把遮罩和滤镜都摘掉：父层留着 filter 会把立绘的边缘光裁成一个矩形框 */
+  .dev.done { -webkit-mask-image: none; mask-image: none; filter: none; }
+  /* 放了 assets/act4.mp4 就用视频顶替第四幕的静态立绘（画面整幅铺满，文案和花瓣照样叠在上面） */
+  .vid-dev { z-index: 19; display: none; }
+  .has-vid .vid-dev { display: block; }
+  .has-vid .girl-wrap { visibility: hidden; }
+  .vid { width: 100%; height: 100%; object-fit: cover; display: block; }
+  /* ?keyframe：只留第四幕的背景和立绘，导出给视频模型当首帧 */
+  .keyframe .copy, .keyframe .hud, .keyframe .progress, .keyframe .scan, .keyframe .grain,
+  .keyframe canvas, .keyframe .term, .keyframe .sparkstage, .keyframe .clawd-stage { display: none; }
+  .keyframe .dev { transition: none; }
+  .breath { transform-origin: 50% 100%; animation: breath 3600ms ease-in-out infinite; }
+  @keyframes breath { 50% { transform: scale(1.004, 1.009); } }
+  .girl { position: absolute; inset: 0; width: 100%; height: 100%; filter: drop-shadow(0 0 26px rgba(255,170,96,.32)); }
+  /* 用立绘自己的轮廓做遮罩：扫描光、掠光都只落在她身上 */
+  .onfig { position: absolute; inset: 0; pointer-events: none; mix-blend-mode: screen;
+    -webkit-mask-size: 100% 100%; mask-size: 100% 100%; }
+  .revglow { background: linear-gradient(180deg, rgba(255,220,160,0) 0%, rgba(255,220,160,0) 46%, rgba(255,232,190,.95) 50%, rgba(255,220,160,0) 54%, rgba(255,220,160,0) 100%);
+    background-size: 100% 300%; background-position: 0 82.5%; opacity: 0; }
+  .revglow.go { animation: revglow 1500ms cubic-bezier(.5,0,.25,1) forwards; }
+  @keyframes revglow { 0% { opacity: 1; background-position: 0 82.5%; } 85% { opacity: 1; } 100% { opacity: 0; background-position: 0 16%; } }
+  .sheen { background: linear-gradient(105deg, rgba(255,240,210,0) 40%, rgba(255,244,222,.5) 50%, rgba(255,240,210,0) 60%);
+    background-size: 300% 100%; background-position: 100% 0; opacity: 0; }
+  .sheen.go { animation: sheen 1700ms cubic-bezier(.45,0,.3,1) forwards; }
+  @keyframes sheen { 0% { opacity: 1; background-position: 100% 0; } 100% { opacity: 1; background-position: 0% 0; } }
+  .bookglow {
+    position: absolute; width: 34%; aspect-ratio: 1; border-radius: 50%; transform: translate(-50%, -50%);
+    background: radial-gradient(circle, rgba(255,226,170,.75) 0%, rgba(255,190,110,.28) 38%, rgba(255,190,110,0) 70%);
+    mix-blend-mode: screen; opacity: 0; transition: opacity 900ms ease;
+  }
+  .bookglow.in { opacity: 1; animation: pulse 2200ms ease-in-out infinite; }
+  @keyframes pulse { 50% { transform: translate(-50%, -50%) scale(1.15); opacity: .7; } }
+  /* 四角小闪光：落在发饰、胸针、书、裙摆的星芒花上 */
+  .glint { position: absolute; width: 7%; aspect-ratio: 1; transform: translate(-50%, -50%) scale(0); opacity: 0; }
+  .glint::before, .glint::after { content: ""; position: absolute; inset: 0;
+    background: radial-gradient(closest-side, #fff 0%, rgba(255,230,180,.9) 18%, rgba(255,230,180,0) 100%); }
+  .glint::before { clip-path: polygon(50% 0, 56% 44%, 100% 50%, 56% 56%, 50% 100%, 44% 56%, 0 50%, 44% 44%); }
+  .glint::after { inset: 32%; border-radius: 50%; }
+  .glints.in .glint { animation: glint 2600ms ease-in-out infinite; }
+  @keyframes glint {
+    0%, 100% { transform: translate(-50%, -50%) scale(0) rotate(0); opacity: 0; }
+    12% { transform: translate(-50%, -50%) scale(1) rotate(45deg); opacity: 1; }
+    26% { transform: translate(-50%, -50%) scale(0) rotate(90deg); opacity: 0; }
+  }
+  .gfloor {
+    position: absolute; left: 50%; bottom: -1.6%; width: 78%; height: 5%; transform: translateX(-50%);
+    background: radial-gradient(50% 50% at 50% 50%, rgba(0,0,0,.6), rgba(0,0,0,0) 70%);
+  }
+  .gbloom {
+    z-index: 34; width: 90vmax; height: 90vmax; margin: -45vmax 0 0 -45vmax; border-radius: 50%; opacity: 0; pointer-events: none;
+    background: radial-gradient(circle, rgba(255,250,236,1) 0%, rgba(255,232,190,.85) 16%, rgba(255,196,130,.4) 38%, rgba(255,196,130,0) 66%);
+  }
+  .gbloom.go { animation: gbloom 1500ms cubic-bezier(.22,.68,.2,1) forwards; }
+  @keyframes gbloom { 0% { opacity: 0; transform: scale(.02); } 24% { opacity: 1; transform: scale(.4); } 55% { opacity: .9; } 100% { opacity: 0; transform: scale(1.5); } }
+
+  /* 左侧文案 */
+  .copy { left: 8vw; top: 50%; transform: translateY(-56%); z-index: 36; width: min(46vw, 640px); pointer-events: none; will-change: transform; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: .42em; color: var(--gold); opacity: 0; transform: translateX(-16px); transition: opacity 600ms ease, transform 600ms cubic-bezier(.16,.84,.24,1); }
+  .eyebrow.in { opacity: .9; transform: none; }
+  .title { margin-top: 14px; font-family: var(--serif); font-style: italic; font-size: clamp(64px, 8.4vw, 132px); line-height: 1; letter-spacing: .01em;
+    color: #fff4e4; text-shadow: 0 0 28px rgba(255,180,110,.45), 0 2px 0 rgba(0,0,0,.18); }
+  .title .lt { display: inline-block; opacity: 0; filter: blur(10px); transform: translateY(.18em); transition: opacity 700ms ease, filter 800ms ease, transform 800ms cubic-bezier(.16,.84,.24,1); }
+  .title.in .lt { opacity: 1; filter: blur(0); transform: none; }
+  .zhname { margin-top: 18px; display: flex; align-items: center; gap: 16px; opacity: 0; transition: opacity 600ms ease; }
+  .zhname.in { opacity: 1; }
+  .zhname b { font-family: var(--zh-serif); font-size: 30px; font-weight: 700; letter-spacing: .3em; color: var(--cream); }
+  .zhname i { display: block; height: 1px; width: 0; background: linear-gradient(90deg, var(--gold), rgba(242,194,122,0)); transition: width 900ms cubic-bezier(.2,.9,.2,1) 150ms; }
+  .zhname.in i { width: 180px; }
+  .zhname span { font-family: var(--mono); font-size: 10px; letter-spacing: .36em; color: rgba(251,241,226,.55); }
+  .tag { margin-top: 30px; font-family: var(--serif); font-style: italic; font-size: clamp(18px, 1.6vw, 24px); color: #fbe9d2; letter-spacing: .02em; min-height: 1.4em; }
+  .tagzh { margin-top: 8px; font-family: var(--zh-serif); font-size: 16px; letter-spacing: .3em; color: rgba(251,233,210,.75); min-height: 1.5em; }
+  .say { margin-top: 30px; font-family: var(--zh); font-size: 16px; letter-spacing: .1em; color: var(--cream);
+    padding-left: 14px; border-left: 2px solid var(--accent); opacity: 0; transform: translateY(10px); transition: opacity 500ms ease, transform 500ms cubic-bezier(.16,.84,.24,1); }
+  .say.in { opacity: .95; transform: none; }
+  .copy.out { opacity: 0; filter: blur(6px); transition: opacity 600ms ease, filter 600ms ease; }
+
+  /* ── HUD：四角、底部读数、跳过、进度 ───────────── */
+  .hud { inset: 0; z-index: 60; pointer-events: none; opacity: 0; transition: opacity 700ms ease; }
+  .hud.in { opacity: 1; }
+  .corner { position: absolute; width: 16px; height: 16px; }
+  .corner::before, .corner::after { content: ""; position: absolute; background: rgba(251,241,226,.3); }
+  .corner::before { width: 100%; height: 1px; } .corner::after { width: 1px; height: 100%; }
+  .c-tl { left: 26px; top: 26px; } .c-tl::before, .c-tl::after { top: 0; left: 0; }
+  .c-tr { right: 26px; top: 26px; } .c-tr::before, .c-tr::after { top: 0; right: 0; }
+  .c-bl { left: 26px; bottom: 26px; } .c-bl::before, .c-bl::after { bottom: 0; left: 0; }
+  .c-br { right: 26px; bottom: 26px; } .c-br::before, .c-br::after { bottom: 0; right: 0; }
+  .readout { position: absolute; left: 46px; bottom: 40px; font-family: var(--mono); font-size: 10.5px; letter-spacing: .24em; color: rgba(251,241,226,.6); }
+  .readout b { color: var(--gold); font-weight: 400; }
+  .powered { position: absolute; right: 46px; bottom: 40px; font-family: var(--mono); font-size: 10.5px; letter-spacing: .24em; color: rgba(251,241,226,.5); display: flex; gap: 10px; align-items: center; }
+  .powered i { display: block; width: 26px; height: 7px; background: var(--accent); }
+  .skip {
+    position: absolute; right: 40px; top: 36px; pointer-events: auto; cursor: pointer;
+    font-family: var(--mono); font-size: 11px; letter-spacing: .24em; color: rgba(251,241,226,.55);
+    background: none; border: 1px solid transparent; padding: 5px 10px;
+  }
+  .skip:hover { color: #fff; border-color: rgba(251,241,226,.3); }
+  .progress { left: 50%; bottom: 12px; z-index: 61; width: min(420px, 32vw); height: 2px; transform: translateX(-50%); background: rgba(251,241,226,.1); }
+  .progress i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--gold)); }
+
+  .flash { inset: 0; z-index: 66; background: #fff6e6; opacity: 0; pointer-events: none; }
+  .grain {
+    inset: -50%; opacity: .06; pointer-events: none; z-index: 71;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/></filter><rect width='120' height='120' filter='url(%23n)' opacity='0.6'/></svg>");
+  }
+
+  /* 交接：机位后撤 + 失焦淡出（启动器同时把整个窗口淡掉，露出后面的 Claude） */
+  #root.handoff {
+    transform: scale(1.035); filter: blur(8px); opacity: 0;
+    transition: opacity 780ms cubic-bezier(.4,0,.2,1), transform 780ms cubic-bezier(.4,0,.2,1), filter 780ms cubic-bezier(.4,0,.2,1);
+  }
+
+  #replay {
+    position: fixed; left: 50%; bottom: 40px; transform: translateX(-50%); z-index: 1;
+    font: 12px/1 "Cascadia Mono", Consolas, monospace; letter-spacing: .24em; color: #8a857b;
+    background: none; border: 1px solid #3a3833; padding: 10px 18px; cursor: pointer;
+    opacity: 0; pointer-events: none; transition: opacity .4s, color .2s, border-color .2s;
+  }
+  #replay.show { opacity: 1; pointer-events: auto; }
+  #replay:hover { color: #f2efe8; border-color: #d97757; }
+
+  @media (max-aspect-ratio: 1/1) {
+    .girl-wrap { left: 50%; height: 70vh; }
+    .copy { left: 6vw; top: 14vh; transform: none; width: 88vw; }
+    .title { font-size: 56px; }
+    .readout, .powered { display: none; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<button id="replay" type="button">↻ REPLAY · 重播（R）</button>
+
+<script>
+(() => {
+  const P = new URLSearchParams(location.search);
+  const SPEED = Math.min(3, Math.max(.35, parseFloat(P.get("speed")) || 1));
+  const EMBED = P.has("embed");
+  const MCP = /^\d{1,3}$/.test(P.get("mcp") || "") ? +P.get("mcp") : null;
+  const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // 四种姿势的立绘（assets/build_girls.py 从 gen/pose-*.png 生成）。
+  // spots：几个星芒花饰和书在立绘里的位置（占宽高的百分比），闪光和 Clawd 的像素都往这儿落
+  const POSES = {
+    a: { name: "开书", size: [894, 1512], say: "书翻开了——今天想一起读点什么？",
+         spots: { book: [47, 27], flower: [56, 5.5], brooch: [48, 19], skirtL: [26, 54], skirtR: [63, 55.5] } },
+    b: { name: "行礼", size: [942, 1521], say: "欢迎回来～今天也请多指教。",
+         spots: { book: [65, 27], flower: [55, 5], brooch: [52, 19], skirtL: [35, 47], skirtR: [73.5, 53] } },
+    c: { name: "回眸", size: [966, 1494], say: "嗯？你来啦，我等你好一会儿了～",
+         spots: { book: [83, 25], flower: [56, 9], brooch: [72, 23], skirtL: [43.5, 57], skirtR: [79, 57] } },
+    d: { name: "招手", size: [917, 1517], say: "嗨～小克在！今天想一起弄点什么？",
+         spots: { book: [59, 25], flower: [55.5, 4.5], brooch: [51, 17.5], skirtL: [26, 54], skirtR: [70, 52.5] } },
+  };
+  // 每次随机挑一种，和上一次不重复（记录存在启动器那个独立的 Chrome 配置里；读写失败就纯随机）
+  const POSE = (() => {
+    const ask = (P.get("pose") || "").toLowerCase();
+    if (POSES[ask]) return ask;
+    let last = null;
+    try { last = localStorage.getItem("clawd-splash:pose"); } catch (e) {}
+    const pool = Object.keys(POSES).filter(k => k !== last);
+    const pick = pool[Math.random() * pool.length | 0];
+    try { localStorage.setItem("clawd-splash:pose", pick); } catch (e) {}
+    return pick;
+  })();
+  const SPOTS = POSES[POSE].spots;
+  const [GW, GH] = POSES[POSE].size;
+  const girlSrc = () => window.CLAUDE_GIRL || `assets/girl-${POSE}.webp`;
+  const VIDEO = P.get("video") || `assets/act4-${POSE}.mp4`;
+  const KEYFRAME = P.has("keyframe");
+  // 首帧按 1920×1080 导出，立绘的摆法和 .girl-wrap 一致：高 90vh、中线在 64%、离底 3vh。
+  // 视频模式下据此算出书在画面里的位置，Clawd 的像素往这儿飞
+  const VKEY = (() => {
+    const h = 1080 * .9, w = h * GW / GH, left = 1920 * .64 - w / 2, top = 1080 - 1080 * .03 - h;
+    return { w: 1920, h: 1080, book: [left + w * SPOTS.book[0] / 100, top + h * SPOTS.book[1] / 100] };
+  })();
+
+  // 星芒：12 道长短错落的光芒，一条闭合路径（方便一笔描出来）
+  function sparkPath(R) {
+    const ang = [0, 31, 59, 92, 119, 151, 178, 212, 239, 268, 301, 329];
+    const len = [1, .84, .96, .8, .94, .86, 1, .82, .95, .87, .98, .83];
+    const rin = .2 * R, hw = .075 * R, rad = Math.PI / 180;
+    const pt = (a, r) => `${(r * Math.cos(a * rad)).toFixed(2)} ${(r * Math.sin(a * rad)).toFixed(2)}`;
+    let d = "";
+    ang.forEach((a0, i) => {
+      const a = a0 - 90, L = len[i] * R;
+      const next = (i === ang.length - 1 ? ang[0] + 360 : ang[i + 1]) - 90;
+      const dl = Math.atan(hw / (.86 * L)) / rad;
+      d += `${i ? "L" : "M"}${pt(a - dl, .86 * L)} Q${pt(a, 1.1 * L)} ${pt(a + dl, .86 * L)} L${pt((a + next) / 2, rin)} `;
+    });
+    return d + "Z";
+  }
+  const SPARK_D = sparkPath(92);
+  const SPARK2D = new Path2D(sparkPath(100));
+  // 单片花瓣：星芒的一道光芒，炸开时往外飞
+  const PETAL2D = new Path2D("M0 -100 Q14 -40 0 0 Q-14 -40 0 -100 Z");
+
+  // Clawd：照桌宠量的格子 —— 身体 8×6、眼睛 1×1、两侧胳膊 2×2、四条腿；手里那本书是带星芒的小册子
+  const CLAWD = `
+    <svg class="clawd" viewBox="-1 -13 22 23" aria-hidden="true">
+      <defs>
+        <linearGradient id="beamG" x1="0" y1="1" x2="0" y2="0">
+          <stop offset="0" stop-color="#ffe6b4" stop-opacity=".85"/><stop offset="1" stop-color="#ffe6b4" stop-opacity="0"/>
+        </linearGradient>
+        <radialGradient id="tomeG"><stop offset="0" stop-color="#fff3d0" stop-opacity=".95"/><stop offset="1" stop-color="#ffb860" stop-opacity="0"/></radialGradient>
+      </defs>
+      <polygon class="beam" points="7.4,-3.6 12.6,-3.6 16,-13 4,-13" fill="url(#beamG)"/>
+      <g class="c-all">
+        <g class="body-g">
+          <g class="fur"><rect x="6" y="7" width="1" height="2"/><rect x="8" y="7" width="1" height="2"/>
+            <rect x="11" y="7" width="1" height="2"/><rect x="13" y="7" width="1" height="2"/></g>
+          <rect class="fur" x="6" y="1" width="8" height="6.05"/>
+          <rect class="eye" x="6.85" y="1.95" width="1" height="1"/>
+          <rect class="eye eye-r" x="12.15" y="1.95" width="1" height="1"/>
+          <g class="arm arm-l">
+            <rect class="fur" x="4" y="3" width="2.05" height="2"/>
+            <g class="tome-held">
+              <rect x="2.3" y="-.2" width="2.5" height="3.1" fill="#7a3b28"/>
+              <rect x="2.3" y="-.2" width=".45" height="3.1" fill="#4e2418"/>
+              <rect x="4.55" y="0" width=".25" height="2.7" fill="#f1e3cb"/>
+              <rect x="3.35" y="1.05" width=".6" height=".6" fill="#f2b45c"/>
+            </g>
+          </g>
+          <rect class="fur arm arm-r" x="13.95" y="3" width="2.05" height="2"/>
+        </g>
+      </g>
+      <g class="tome-open">
+        <ellipse class="tome-glow" cx="10" cy="-3.4" rx="5.5" ry="3" fill="url(#tomeG)"/>
+        <rect x="6.9" y="-3.25" width="6.2" height="2.15" fill="#7a3b28"/>
+        <rect x="7.2" y="-3.7" width="2.7" height="2.2" fill="#f4e6cf"/>
+        <rect x="10.1" y="-3.7" width="2.7" height="2.2" fill="#f4e6cf"/>
+        <rect x="9.9" y="-3.8" width=".2" height="2.6" fill="#4e2418"/>
+        <rect x="7.6" y="-3.2" width="1.9" height=".22" fill="#dcc29c"/><rect x="7.6" y="-2.65" width="1.5" height=".22" fill="#dcc29c"/>
+        <rect x="10.5" y="-3.2" width="1.9" height=".22" fill="#dcc29c"/><rect x="10.9" y="-2.65" width=".55" height=".55" fill="#f2b45c"/>
+      </g>
+    </svg>`;
+
+  const GLINTS = Object.values(SPOTS).map(([x, y], i) =>
+    `<i class="glint" style="left:${x}%;top:${y}%;animation-delay:${i * 420}ms"></i>`).join("");
+
+  const TEMPLATE = `
+    <div class="bg"></div>
+    <div class="bg4"></div>
+    <div class="rays"></div>
+    <canvas class="fx-back"></canvas>
+    <div class="floor"></div>
+    <div class="dev vid-dev"><video class="vid" muted loop playsinline preload="auto"></video></div>
+
+    <div class="clawd-stage">${CLAWD}</div>
+
+    <div class="girl-wrap">
+      <div class="gfloor"></div>
+      <div class="dev">
+        <div class="breath">
+          <img class="girl" alt="" draggable="false">
+          <div class="onfig revglow"></div>
+          <div class="onfig sheen"></div>
+          <div class="bookglow" style="left:${SPOTS.book[0]}%;top:${SPOTS.book[1]}%"></div>
+          <div class="glints">${GLINTS}</div>
+        </div>
+      </div>
+    </div>
+
+    <canvas class="fx-front"></canvas>
+
+    <div class="copy">
+      <div class="eyebrow">ANTHROPIC · CLAUDE DESKTOP</div>
+      <div class="title">${[..."Claude"].map((c, i) => `<span class="lt" style="transition-delay:${i * 70}ms">${c}</span>`).join("")}</div>
+      <div class="zhname"><b>小克</b><i></i><span>YOUR THINKING PARTNER</span></div>
+      <div class="tag"></div>
+      <div class="tagzh"></div>
+      <div class="say">${POSES[POSE].say}</div>
+    </div>
+
+    <div class="term"></div>
+    <div class="dot"></div>
+    <div class="sparkstage">
+      <svg class="spark" viewBox="-100 -100 200 200" aria-hidden="true"><path pathLength="1" d="${SPARK_D}"/></svg>
+      <div class="sname">CLAUDE</div>
+      <div class="ssub">小克 · 正在醒来</div>
+    </div>
+    <div class="gbloom"></div>
+
+    <div class="hud">
+      <div class="corner c-tl"></div><div class="corner c-tr"></div>
+      <div class="corner c-bl"></div><div class="corner c-br"></div>
+      <div class="readout"></div>
+      <div class="powered">POWERED BY ANTHROPIC <i></i></div>
+      <button class="skip" type="button">SKIP · ESC</button>
+    </div>
+    <div class="progress"><i></i></div>
+    <div class="flash"></div>
+    <div class="scan"></div>
+    <div class="grain"></div>`;
+
+  const root = document.getElementById("root");
+  const replayBtn = document.getElementById("replay");
+  let timers = [], intervals = [], finished = false, raf = 0, startedAt = 0;
+
+  const $ = s => root.querySelector(s);
+  const on = (s, c = "in") => $(s).classList.add(c);
+  const onAll = (s, c = "in") => root.querySelectorAll(s).forEach(el => el.classList.add(c));
+  const off = (s, c = "in") => $(s).classList.remove(c);
+  const at = (ms, fn) => timers.push(setTimeout(fn, ms / SPEED));
+  const reflow = el => void el.offsetWidth;
+  const esc = c => c.replace(/[<>&]/g, m => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[m]));
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const pad = n => String(n).padStart(2, "0");
+
+  function typeInto(el, text, step) {
+    el.classList.remove("in");
+    el.innerHTML = [...text].map((c, i) => `<span class="ch" style="transition-delay:${Math.round(i * step / SPEED)}ms">${esc(c)}</span>`).join("");
+    reflow(el);
+    el.classList.add("in");
+  }
+
+  // 真实读数：都取自这台机器 / 启动器传进来的参数，不编数字
+  function readings() {
+    const d = new Date();
+    const wk = "日一二三四五六"[d.getDay()];
+    const dpr = window.devicePixelRatio || 1;
+    return {
+      date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} 周${wk}`,
+      time: `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`,
+      host: `${navigator.hardwareConcurrency || "?"} THREADS · ${Math.round(screen.width * dpr)}×${Math.round(screen.height * dpr)}`,
+      mcp: MCP == null ? null : `${MCP} SERVER${MCP === 1 ? "" : "S"} LINKED`,
+    };
+  }
+
+  // ── 画布特效：星芒碎片、Clawd 的像素、飘落的花瓣、背景光斑 ─────────
+  const fx = { parts: [], cam: 0, act4: -1, last: 0 };
+  function fxInit() {
+    fx.back = $(".fx-back"); fx.front = $(".fx-front");
+    fx.bctx = fx.back.getContext("2d"); fx.fctx = fx.front.getContext("2d");
+    fx.parts = []; fx.cam = 0; fx.act4 = -1; fx.last = performance.now();
+    fxResize();
+  }
+  function fxResize() {
+    if (!fx.back) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    fx.w = innerWidth; fx.h = innerHeight;
+    for (const c of [fx.back, fx.front]) { c.width = fx.w * dpr; c.height = fx.h * dpr; }
+    fx.bctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    fx.fctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function burstSpark(cx, cy) {
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2 + rand(-.08, .08), v = rand(520, 760);
+      fx.parts.push({ k: "ray", x: cx, y: cy, vx: Math.cos(a) * v, vy: Math.sin(a) * v, rot: a + Math.PI / 2, vr: rand(-2, 2), s: rand(34, 48), life: rand(.9, 1.2), age: 0, col: "217,119,87" });
+    }
+    for (let i = 0; i < 46; i++) {
+      const a = rand(0, Math.PI * 2), v = rand(120, 520);
+      fx.parts.push({ k: "ray", x: cx, y: cy, vx: Math.cos(a) * v, vy: Math.sin(a) * v, rot: rand(0, 6), vr: rand(-6, 6), s: rand(4, 12), life: rand(.6, 1.3), age: 0, col: Math.random() < .5 ? "242,194,122" : "255,236,210" });
+    }
+  }
+
+  // 把 Clawd 身上每一格像素拆下来，先往外炸一点，再沿弧线飞进她手里那本书
+  function dissolveClawd(tx, ty) {
+    const svg = $(".clawd"), m = svg.getScreenCTM();
+    if (!m) return;
+    const p = svg.createSVGPoint();
+    const cells = [];
+    for (let x = 6; x < 14; x++) for (let y = 1; y < 7; y++) cells.push([x, y]);
+    for (const x of [6, 8, 11, 13]) for (const y of [7, 8]) cells.push([x, y]);
+    for (const [ax, ay] of [[4, 1.3], [13.95, 1.3]]) for (let x = 0; x < 2; x++) for (let y = 0; y < 2; y++) cells.push([ax + x, ay + y]);
+    const unit = Math.hypot(m.a, m.b);
+    cells.forEach(([x, y]) => {
+      p.x = x + .5; p.y = y + .5;
+      const q = p.matrixTransform(m);
+      const ox = q.x + rand(-60, 60), oy = q.y + rand(-90, -20);
+      fx.parts.push({
+        k: "pix", x: q.x, y: q.y, x0: q.x, y0: q.y, cx: ox, cy: oy - rand(80, 200),
+        tx: tx + rand(-14, 14), ty: ty + rand(-14, 14), s: unit, age: 0,
+        delay: (6 - y) * .035 + rand(0, .28), dur: rand(1.2, 1.55),
+      });
+    });
+  }
+
+  function seedAmbient() {
+    for (let i = 0; i < 14; i++) fx.parts.push({ k: "bokeh", x: rand(0, fx.w), y: rand(0, fx.h), z: rand(.15, .5), r: rand(30, 110), a: rand(.05, .14), ph: rand(0, 6) });
+    for (let i = 0; i < 42; i++) fx.parts.push(newPetal(rand(-.1, 1) * fx.h));
+  }
+  function newPetal(y) {
+    const z = Math.random() < .22 ? rand(1.1, 1.7) : rand(.35, 1);
+    return { k: "petal", x: rand(-.05, 1.05) * fx.w, y: y ?? rand(-.25, -.05) * fx.h, z, vy: rand(28, 60) * z, vx: rand(-14, 6),
+      rot: rand(0, 6), vr: rand(-1.2, 1.2), s: rand(5, 11) * z, ph: rand(0, 6), col: Math.random() < .6 ? "217,119,87" : "242,194,122" };
+  }
+
+  function fxLoop(now) {
+    raf = requestAnimationFrame(fxLoop);
+    const dt = Math.min(.05, (now - fx.last) / 1000) * SPEED;
+    fx.last = now;
+    const b = fx.bctx, f = fx.fctx;
+    b.clearRect(0, 0, fx.w, fx.h); f.clearRect(0, 0, fx.w, fx.h);
+
+    // 第四幕的机位：慢慢往右平移 + 推近；越近的层挪得越多，就有了纵深
+    if (fx.act4 >= 0) {
+      const t = (now - fx.act4) / 1000 * SPEED;
+      const e = Math.min(1, t / 8.5);
+      fx.cam = (e - .5) * 2;                       // -1 → 1
+      const dolly = 1 + .035 * (1 - Math.pow(1 - e, 2));
+      $(".girl-wrap").style.transform = `translateX(calc(-50% + ${(-fx.cam * 14).toFixed(2)}px)) scale(${dolly.toFixed(4)})`;
+      $(".rays").style.transform = `translateX(${(-fx.cam * 5).toFixed(2)}px) rotate(${(fx.cam * .6).toFixed(3)}deg)`;
+      $(".copy").style.transform = `translate(${(-fx.cam * 8).toFixed(2)}px, -56%)`;
+    }
+
+    const keep = [];
+    for (const q of fx.parts) {
+      if (q.k === "ray") {
+        q.age += dt; if (q.age >= q.life) continue;
+        const drag = Math.pow(.06, dt);
+        q.vx *= drag; q.vy *= drag; q.x += q.vx * dt; q.y += q.vy * dt; q.rot += q.vr * dt;
+        const a = 1 - q.age / q.life;
+        f.save(); f.globalCompositeOperation = "lighter"; f.globalAlpha = a;
+        f.translate(q.x, q.y); f.rotate(q.rot); f.fillStyle = `rgb(${q.col})`;
+        if (q.s > 20) { f.scale(q.s / 100, q.s / 100); f.fill(PETAL2D); }
+        else { f.scale(q.s / 100, q.s / 100); f.fill(SPARK2D); }
+        f.restore();
+      } else if (q.k === "pix") {
+        q.age += dt;
+        const p = Math.max(0, Math.min(1, (q.age - q.delay) / q.dur));
+        const e = p < .5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+        const u = 1 - e;
+        q.x = u * u * q.x0 + 2 * u * e * q.cx + e * e * q.tx;
+        q.y = u * u * q.y0 + 2 * u * e * q.cy + e * e * q.ty;
+        if (p >= 1) continue;
+        const s = q.s * (1 - .75 * e);
+        const r = Math.round(216 + 39 * e), g = Math.round(118 + 106 * e), bl = Math.round(86 + 84 * e);
+        f.save(); f.globalCompositeOperation = "lighter";
+        f.fillStyle = `rgba(${r},${g},${bl},${(.95 - .3 * e).toFixed(2)})`;
+        f.shadowColor = "rgba(255,200,130,.9)"; f.shadowBlur = 10 * e;
+        f.fillRect(q.x - s / 2, q.y - s / 2, s, s);
+        f.restore();
+      } else if (q.k === "bokeh") {
+        if (fx.act4 < 0) { keep.push(q); continue; }
+        q.ph += dt * .6;
+        const x = q.x - fx.cam * 40 * q.z, y = q.y + Math.sin(q.ph) * 6;
+        const g = b.createRadialGradient(x, y, 0, x, y, q.r);
+        g.addColorStop(0, `rgba(255,210,150,${q.a})`); g.addColorStop(1, "rgba(255,210,150,0)");
+        b.fillStyle = g; b.beginPath(); b.arc(x, y, q.r, 0, Math.PI * 2); b.fill();
+      } else if (q.k === "petal") {
+        q.ph += dt; q.y += q.vy * dt; q.x += (q.vx + Math.sin(q.ph * 1.3) * 18 * q.z) * dt; q.rot += q.vr * dt;
+        if (q.y > fx.h + 40) { keep.push(newPetal()); continue; }
+        const c = q.z >= 1 ? f : b;
+        const x = q.x - fx.cam * 60 * q.z;
+        c.save(); c.translate(x, q.y); c.rotate(q.rot);
+        c.globalAlpha = q.z >= 1 ? .42 : .35 + .5 * q.z;
+        c.fillStyle = `rgb(${q.col})`;
+        c.scale(q.s / 100, q.s / 100); c.fill(SPARK2D);
+        c.restore();
+      }
+      keep.push(q);
+    }
+    fx.parts = keep;
+  }
+
+  function bookPoint() {
+    if (root.classList.contains("has-vid")) {
+      // object-fit: cover 的换算：等比放大到盖满，再居中裁掉多出来的边
+      const k = Math.max(innerWidth / VKEY.w, innerHeight / VKEY.h);
+      return [(innerWidth - VKEY.w * k) / 2 + VKEY.book[0] * k, (innerHeight - VKEY.h * k) / 2 + VKEY.book[1] * k];
+    }
+    const r = $(".girl-wrap").getBoundingClientRect();
+    return [r.left + r.width * SPOTS.book[0] / 100, r.top + r.height * SPOTS.book[1] / 100];
+  }
+
+  function playVideo() {
+    const v = $(".vid");
+    if (!root.classList.contains("has-vid")) return;
+    v.currentTime = 0;
+    v.play().catch(() => {});
+  }
+
+  function clawd(add, remove = []) {
+    const c = $(".clawd");
+    c.classList.remove(...remove);
+    c.classList.add(...add);
+  }
+
+  function blink() {
+    const c = $(".clawd");
+    c.classList.add("blink");
+    setTimeout(() => c.classList.remove("blink"), 130);
+  }
+
+  function setFlash(op, ms) {
+    const f = $(".flash");
+    f.style.transition = `opacity ${ms}ms ease`;
+    f.style.opacity = op;
+  }
+
+  function finish() {
+    if (finished) return;
+    finished = true;
+    timers.forEach(clearTimeout);
+    intervals.forEach(clearInterval);
+    timers = []; intervals = [];
+    root.classList.add("handoff");
+    // 给外层启动器的信号：它轮询窗口标题，看到 HANDOFF 开始淡出窗口，看到 DONE 关窗
+    document.title = "小克开机动画 · HANDOFF";
+    setTimeout(() => {
+      cancelAnimationFrame(raf);
+      document.title = "小克开机动画 · DONE";
+      document.dispatchEvent(new CustomEvent("splash:done"));
+      try { window.chrome?.webview?.postMessage("splash:done"); } catch (e) {}
+      if (!EMBED) replayBtn.classList.add("show");
+    }, 800);
+  }
+
+  // 第四幕直接摆好的样子：减少动态效果时用，只停留一小会儿
+  function showStill() {
+    ["bg4", "rays", "hud", "eyebrow", "title", "zhname", "say"].forEach(c => on("." + c));
+    onAll(".dev"); onAll(".dev", "done"); on(".scan", "soft");
+    $(".term").style.display = "none"; $(".sparkstage").style.display = "none";
+    $(".tag").textContent = "Knowledge illuminates a brighter tomorrow.";
+    $(".tagzh").textContent = "知识，照亮更好的明天。";
+    at(2600, finish);
+  }
+
+  function play() {
+    timers.forEach(clearTimeout);
+    intervals.forEach(clearInterval);
+    cancelAnimationFrame(raf);
+    timers = []; intervals = []; finished = false;
+    replayBtn.classList.remove("show");
+    document.title = "小克开机动画";
+
+    root.className = "";
+    root.innerHTML = TEMPLATE;
+    reflow(root);
+    startedAt = performance.now();
+    // 扫描光、掠光用立绘轮廓做遮罩；file:// 下只有 data URL 能当遮罩，没加载到就不显示这两层
+    root.style.setProperty("--girl-ar", `${GW} / ${GH}`);
+    $(".girl").src = girlSrc();
+    root.querySelectorAll(".onfig").forEach(el => {
+      if (window.CLAUDE_GIRL) el.style.webkitMaskImage = el.style.maskImage = `url("${girlSrc()}")`;
+      else el.style.display = "none";
+    });
+    $(".skip").addEventListener("click", e => { e.stopPropagation(); finish(); });
+
+    const R = readings();
+    $(".readout").innerHTML = `SESSION READY · <b>${R.time}</b>` + (R.mcp ? ` · MCP ${MCP}` : "");
+
+    // 视频能读出第一帧才切到视频模式；文件不存在就安静地用静态立绘
+    const v = $(".vid");
+    v.addEventListener("loadeddata", () => root.classList.add("has-vid"), { once: true });
+    v.src = VIDEO;
+
+    if (KEYFRAME) {
+      root.classList.add("keyframe");
+      on(".bg4"); on(".rays"); onAll(".dev"); onAll(".dev", "done");
+      return;
+    }
+    if (REDUCED) { showStill(); return; }
+
+    fxInit();
+    raf = requestAnimationFrame(fxLoop);
+    const TOTAL = 20600;
+    const bar = $(".progress i");
+    bar.style.transition = `width ${TOTAL / SPEED}ms linear`;
+    reflow(bar); bar.style.width = "100%";
+
+    // ── 第一幕 0 – 3.3s：冷启动终端，读数都是真的 ──
+    const term = $(".term");
+    const LINES = [
+      `<b>›</b> CLAUDE DESKTOP <i>·</i> COLD BOOT`,
+      `<b>›</b> HOST   ${R.host}`,
+      `<b>›</b> TIME   ${R.date} ${R.time}`,
+      `<b>›</b> ${R.mcp ? "MCP    " + R.mcp : "TOOLS  READY"}`,
+      `<b>›</b> MEMORY <i>.............</i> <span class="ok">OK</span>`,
+      `<b>›</b> 唤醒小克 <i>...........</i> `,
+    ];
+    term.innerHTML = LINES.map(() => `<div class="ln"></div>`).join("");
+    const lns = term.querySelectorAll(".ln");
+    LINES.forEach((html, i) => at(150 + i * 380, () => {
+      // 带标签的行整行写入，再逐字显出来：把文字节点拆成 .ch
+      const tmp = document.createElement("div");
+      tmp.innerHTML = html;
+      let k = 0;
+      const wrap = node => {
+        if (node.nodeType === 3) {
+          const frag = document.createDocumentFragment();
+          for (const c of node.textContent) {
+            const s = document.createElement("span");
+            s.className = "ch"; s.textContent = c;
+            s.style.transitionDelay = `${Math.round(k++ * 9 / SPEED)}ms`;
+            frag.appendChild(s);
+          }
+          node.replaceWith(frag);
+        } else [...node.childNodes].forEach(wrap);
+      };
+      [...tmp.childNodes].forEach(wrap);
+      lns[i].innerHTML = "";
+      lns[i].append(...tmp.childNodes);
+      reflow(lns[i]);
+      // .in 只作用在直接子元素上，嵌套的 <b>/<i> 里也要亮
+      lns[i].classList.add("in");
+      lns[i].querySelectorAll("b, i, span:not(.ch)").forEach(el => el.classList.add("in"));
+      if (i === LINES.length - 1) lns[i].insertAdjacentHTML("beforeend", `<span class="caret"></span>`);
+    }));
+    at(2650, () => on(".term", "jit"));
+    at(2950, () => { term.classList.remove("jit"); reflow(term); on(".term", "crt"); });
+    at(3250, () => on(".dot", "go"));
+
+    // ── 第二幕 3.4 – 6.2s：星芒一笔描出 → 填满 → 炸成花瓣 ──
+    at(3400, () => { on(".spark", "draw"); on(".sname"); });
+    at(4000, () => on(".ssub"));
+    at(4800, () => on(".spark", "ink"));
+    at(5900, () => {
+      on(".spark", "burst"); on(".sname", "out"); on(".ssub", "out");
+      burstSpark(innerWidth / 2, innerHeight / 2 - 30);
+      setFlash(.35, 90);
+    });
+    at(6030, () => setFlash(0, 800));
+
+    // ── 第三幕 6.2 – 12.6s：Clawd 落地、掏书、书页透光、化成像素飞走 ──
+    at(6250, () => { on(".bg"); on(".floor"); on(".hud"); on(".scan", "soft"); $(".term").style.display = "none"; });
+    at(6600, () => clawd(["land"]));
+    at(7350, blink);
+    at(7750, blink);
+    at(8100, () => clawd(["pocket", "rummage"]));
+    at(8800, () => clawd(["lift"], ["pocket", "rummage"]));
+    at(9700, () => clawd(["open", "happy"], ["lift"]));
+    at(10200, () => clawd(["beaming", "glow"]));
+    at(10700, () => clawd(["hop"]));
+    at(11400, () => {
+      const [bx, by] = bookPoint();
+      dissolveClawd(bx, by);
+      clawd(["gone"]);
+      off(".floor");
+    });
+
+    // ── 第四幕 12.9 – 19.3s：像素汇进书里 → 光炸开 → 立绘显影 ──
+    at(12900, () => {
+      const [bx, by] = bookPoint();
+      const g = $(".gbloom");
+      g.style.left = bx + "px"; g.style.top = by + "px";
+      g.classList.add("go");
+      on(".bg4"); on(".rays");
+      setFlash(.5, 260);
+    });
+    at(13150, () => {
+      setFlash(0, 1000);
+      playVideo();
+      fx.act4 = performance.now();
+      seedAmbient();
+      onAll(".dev"); on(".revglow", "go");
+      $(".bg").classList.remove("in");
+    });
+    at(15400, () => onAll(".dev", "done"));
+    at(14000, () => { on(".bookglow"); on(".glints"); on(".eyebrow"); });
+    at(14300, () => on(".title"));
+    at(14950, () => on(".zhname"));
+    at(15300, () => on(".sheen", "go"));
+    at(15700, () => typeInto($(".tag"), "Knowledge illuminates a brighter tomorrow.", 34));
+    at(17100, () => typeInto($(".tagzh"), "知识，照亮更好的明天。", 80));
+    at(18000, () => on(".say"));
+
+    // ── 第五幕 19.3 – 21.4s：文案虚化、立绘再掠一道光，交接给 Claude ──
+    at(19300, () => { const s = $(".sheen"); s.classList.remove("go"); reflow(s); s.classList.add("go"); });
+    at(19900, () => on(".copy", "out"));
+    at(TOTAL, finish);
+  }
+
+  // 重播就整页重新载入，顺便换一种姿势
+  const replay = () => location.reload();
+  replayBtn.addEventListener("click", replay);
+  // 点画面任意处跳过；刚开场 0.4 秒内的点击不算，防止双击快捷方式的第二下把它跳掉
+  root.addEventListener("click", () => { if (performance.now() - startedAt > 400) finish(); });
+  document.addEventListener("keydown", e => {
+    if (["Escape", " ", "Enter"].includes(e.key)) finish();
+    else if ((e.key === "r" || e.key === "R") && finished && !EMBED) replay();
+  });
+  addEventListener("resize", fxResize);
+
+  // 只加载这次抽中的那一张立绘（每张一两 MB，没必要四张全读）；加载失败也照常播，退回直接引用 webp
+  const tag = document.createElement("script");
+  tag.src = `assets/girl-${POSE}.js`;
+  tag.onload = tag.onerror = play;
+  document.head.appendChild(tag);
+})();
+</script>
+</body>
+</html>

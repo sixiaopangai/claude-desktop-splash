@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>立绘视频生成说明</title>
+<style>
+  :root { --bg: #faf6ef; --ink: #2a2118; --muted: #7a6d5e; --accent: #c8643f; --card: #fff; --line: #e8ddcc; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #17120e; --ink: #f1e8dc; --muted: #a8998a; --card: #211a14; --line: #3a2f25; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.75 "Microsoft YaHei", "PingFang SC", sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 36px 16px 60px; }
+  h1 { font-size: 26px; margin: 0 0 6px; }
+  h2 { font-size: 18px; margin: 34px 0 10px; color: var(--accent); }
+  p.lead { color: var(--muted); margin: 0 0 20px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 18px; margin: 12px 0; }
+  img { width: 100%; border-radius: 8px; border: 1px solid var(--line); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  pre { background: #1d1712; color: #f3e6d4; padding: 12px 14px; border-radius: 8px; overflow-x: auto; white-space: pre-wrap; font: 13px/1.6 "Cascadia Mono", Consolas, monospace; }
+  code { font-family: "Cascadia Mono", Consolas, monospace; font-size: 13px; }
+  ol li, ul li { margin: 4px 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>给第四幕换成会动的立绘视频</h1>
+  <p class="lead">第四幕每次随机出现四种姿势之一（A 开书 · B 行礼 · C 回眸 · D 招手）。抽到哪种，就去找 <code>assets/act4-&lt;姿势&gt;.mp4</code>（比如 <code>act4-d.mp4</code>）：有就播视频，没有就用静态立绘。可以只给喜欢的姿势做视频。</p>
+
+  <h2>1. 首帧</h2>
+  <p>每种姿势各有一张首帧：<code>keyframe-a.png</code> ～ <code>keyframe-d.png</code>，就是动画第四幕的背景加对应立绘，构图已经对齐。生成哪种姿势的视频，就用哪张当首帧（也当尾帧）。</p>
+  <img src="keyframe-d.png" alt="首帧预览（D 招手）">
+
+  <h2>2. 用哪个工具（都能在国内直接用）</h2>
+  <table>
+    <tr><th>工具</th><th>怎么设</th><th>说明</th></tr>
+    <tr><td>即梦（Seedance 2.0）</td><td>图生视频 → 首尾帧，两张都传同一张 keyframe；16:9、1080p、5–8 秒</td><td>二次元的头发、布料动得比较自然，首选</td></tr>
+    <tr><td>可灵</td><td>图生视频 → 首尾帧；运动幅度调低</td><td>人物一致性好；幅度开大了脸容易变</td></tr>
+    <tr><td>海螺 / 通义万相（Wan 2.2）</td><td>图生视频，传首帧</td><td>可以拿来当备选、对比效果</td></tr>
+    <tr><td>Colab Pro 自己跑 Wan 2.2 I2V</td><td>A100 上跑 14B 模型</td><td>本机 8 GB 显存 + 16 GB 内存装不下 14B 权重，不要在本机跑</td></tr>
+  </table>
+  <p>首尾帧用同一张图，视频播完正好回到开头，循环播放时就看不出接缝。</p>
+
+  <h2>3. 提示词</h2>
+  <div class="card">
+    <b>中文</b>
+    <pre>二次元少女立绘，镜头完全固定不动。她安静地站着，轻轻呼吸，胸口和肩膀随呼吸起伏；长长的橙色头发和发梢被微风吹得缓缓飘动，裙摆和丝带轻轻摇曳；她慢慢眨一下眼，嘴角露出浅浅的微笑，怀里那本书的星芒封面微微发光。背景里的光束和浮尘缓缓流动。动作幅度很小，画风、脸和服装保持不变，像 Live2D 待机动画。</pre>
+    <b>English</b>
+    <pre>Anime character illustration, locked-off static camera. She stands still and breathes softly, shoulders and chest rising gently; her long orange hair and its ends drift slowly in a light breeze, skirt and ribbons sway slightly; she blinks once and smiles faintly; the sun emblem on the book she holds glows softly. Light rays and dust motes drift in the background. Very subtle motion, consistent face, outfit and art style, Live2D-style idle loop.</pre>
+    <b>反向提示词（支持的工具填上）</b>
+    <pre>镜头移动, 推拉摇移, 转身, 走动, 大幅度动作, 变脸, 换装, 多余的手指, 画风变化, 文字, 水印</pre>
+  </div>
+  <p>一次只生成 5 秒左右的短片，挑最稳的那条。脸变了、手乱了的直接丢掉，别凑合。</p>
+
+  <h2>4. 放进动画</h2>
+  <ol>
+    <li>导出 H.264 编码的 mp4（工具默认导出的就是）。</li>
+    <li>按姿势重命名为 <code>act4-a.mp4</code> ～ <code>act4-d.mp4</code>，放进项目的 <code>assets\</code> 文件夹。</li>
+    <li>如果装了 ffmpeg，建议无损重排一下，让文件头先加载（不装也能播）：
+      <pre>ffmpeg -i 原片.mp4 -c copy -movflags +faststart assets\act4-d.mp4</pre></li>
+    <li>双击 <code>splash.html</code> 预览，或者直接点快捷方式「Claude（小克动画版）」。</li>
+  </ol>
+  <p>不想覆盖原文件的话，也可以在预览时加参数试别的片子：<code>splash.html?pose=d&amp;video=assets/试片.mp4</code>（<code>?pose=</code> 固定姿势，方便对着看）</p>
+
+  <h2>5. 素材来源</h2>
+  <p>立绘是从网上找来的别人的作品，自己本地用没问题。如果以后要录屏发到公开平台，先确认作者是谁、能不能用。</p>
+</main>
+</body>
+</html>

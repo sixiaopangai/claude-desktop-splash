@@ -1,0 +1,29 @@
+# 启动器运行时生成的东西
+launcher/chrome-profile/
+launcher/edge-profile/
+launcher/*.exe
+launcher/*.log
+
+# 原始参考图（别人的作品，不公开）
+photo/
+
+# 生成过程的中间文件：运行日志、放大图、对比图、草稿提示词
+gen/upscaled/
+gen/*.log
+gen/codex-last-*.txt
+gen/prompt-v1.txt
+gen/prompt-v2b.txt
+gen/prompt-v3.txt
+gen/claude-girl-gen-v1.png
+gen/*对比*.png
+
+# 豆包原片（处理后的成品在 assets/act4-*.mp4）
+video-kit/doubao-*.mp4
+
+# 和这个项目无关的本机修复记录
+codex-fix/
+
+# 本地开发配置
+.claude/
+__pycache__/
+*.pyc
